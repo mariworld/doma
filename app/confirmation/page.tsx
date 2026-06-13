@@ -2,20 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { ethers } from 'ethers'
-import { getEthereumProvider, getWalletErrorMessage } from '@/lib/ethereum'
+import { getWalletErrorMessage, type WalletInfo } from '@/lib/ethereum'
+import NamecheapHeader from '@/components/NamecheapHeader'
+import WalletPicker from '@/components/WalletPicker'
 
 const DOMA_TESTNET = {
-  chainId: '0x17CC4', // 97476 in hex
+  chainId: '0x17CC4',
   chainName: 'Doma Testnet',
   rpcUrls: ['https://rpc-testnet.doma.xyz'],
   nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
   blockExplorerUrls: ['https://explorer-testnet.doma.xyz'],
 }
-
-// Minimal ABI for tokenization (when a real contract address is available)
-const DOMA_ABI = [
-  'function tokenize(string memory domain, address owner) public payable',
-]
 
 const BURN_ADDRESS = '0x000000000000000000000000000000000000dEaD'
 
@@ -27,6 +24,7 @@ export default function Confirmation() {
   const [step, setStep] = useState<Step>('idle')
   const [txHash, setTxHash] = useState<string | null>(null)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [connectedWallet, setConnectedWallet] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -36,31 +34,25 @@ export default function Confirmation() {
     setShouldTokenize(tokenize === 'true')
   }, [])
 
-  const handleTokenize = async () => {
+  const handleTokenize = async (wallet: WalletInfo) => {
     setError(null)
+    setConnectedWallet(wallet.name)
     try {
-      // Step 1: Connect wallet
       setStep('connecting')
-      const ethereum = getEthereumProvider()
-      if (!ethereum) {
-        throw new Error('No wallet found. Install MetaMask or Phantom, then try again.')
-      }
-      const provider = new ethers.BrowserProvider(ethereum)
+      const provider = new ethers.BrowserProvider(wallet.provider)
       const accounts = await provider.send('eth_requestAccounts', [])
       setWalletAddress(accounts[0])
 
-      // Step 2: Switch to Doma testnet
       setStep('switching')
       try {
-        await ethereum.request({
+        await wallet.provider.request({
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: DOMA_TESTNET.chainId }],
         })
       } catch (switchError: unknown) {
         const err = switchError as { code?: number }
-        // Chain not added yet, add it
         if (err.code === 4902) {
-          await ethereum.request({
+          await wallet.provider.request({
             method: 'wallet_addEthereumChain',
             params: [DOMA_TESTNET],
           })
@@ -69,11 +61,9 @@ export default function Confirmation() {
         }
       }
 
-      // Step 3: Record tokenization on Doma testnet
       setStep('tokenizing')
       const signer = await provider.getSigner()
 
-      // 0-value transfer with no calldata — Doma rejects self-transfers that include data
       const tx = await signer.sendTransaction({
         to: BURN_ADDRESS,
         value: ethers.parseEther('0'),
@@ -90,77 +80,91 @@ export default function Confirmation() {
     }
   }
 
-  if (!domain) return <div className="text-white p-10">Loading...</div>
+  const handleRetry = () => {
+    setConnectedWallet(null)
+    setStep('idle')
+  }
+
+  if (!domain) return (
+    <main className="min-h-screen bg-white">
+      <NamecheapHeader breadcrumb="Domains › Confirmation" />
+      <div className="text-nc-text-muted p-10 text-center">Loading...</div>
+    </main>
+  )
 
   return (
-    <main className="min-h-screen bg-[#1a1a2e]">
-      <header className="bg-[#de3723] px-6 py-3 flex items-center justify-between">
-        <div className="text-white font-bold text-xl">💾 Namecheap</div>
-        <div className="text-white text-sm">Order Confirmed 🎉</div>
-      </header>
+    <main className="min-h-screen bg-nc-bg-subtle">
+      <NamecheapHeader breadcrumb="Domains › Confirmation" badge="Order Confirmed" />
 
       <div className="max-w-2xl mx-auto px-6 py-10">
-        {/* Success banner */}
-        <div className="bg-green-900 border border-green-500 rounded-lg p-5 mb-6 text-center">
-          <p className="text-green-400 text-4xl mb-2">🎉</p>
-          <h1 className="text-white text-2xl font-bold">Domain Registered!</h1>
-          <p className="text-green-300 mt-1">{domain.domain} is yours for 1 year</p>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6 text-center">
+          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-nc-text text-2xl font-bold">Domain Registered!</h1>
+          <p className="text-green-700 mt-1">{domain.domain} is yours for 1 year</p>
         </div>
 
-        {/* Tokenization section */}
         {shouldTokenize && (
-          <div className="bg-gray-800 rounded-lg p-5 mb-6">
-            <h2 className="text-white font-bold text-lg mb-1">⛓️ Tokenize on Doma Blockchain</h2>
-            <p className="text-gray-400 text-sm mb-4">
+          <div className="bg-white border border-nc-border rounded-lg p-5 mb-6 shadow-sm">
+            <h2 className="text-nc-text font-bold text-lg mb-1">Tokenize on Doma Blockchain</h2>
+            <p className="text-nc-text-muted text-sm mb-4">
               Connect your wallet to mint {domain.domain} as an NFT on the Doma testnet.
             </p>
 
             {step === 'idle' && (
-              <button
-                onClick={handleTokenize}
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-bold transition"
-              >
-                Connect Wallet & Tokenize →
-              </button>
+              <WalletPicker onSelect={handleTokenize} />
             )}
 
             {step === 'connecting' && (
-              <div className="text-purple-300 text-center py-3">🔌 Connecting wallet...</div>
+              <div className="text-nc-text-muted text-center py-3">
+                Connecting to {connectedWallet}...
+              </div>
             )}
 
             {step === 'switching' && (
-              <div className="text-purple-300 text-center py-3">🔄 Switching to Doma Testnet...</div>
+              <div className="text-nc-text-muted text-center py-3">
+                Switching {connectedWallet} to Doma Testnet...
+              </div>
             )}
 
             {step === 'tokenizing' && (
-              <div className="text-purple-300 text-center py-3">⛏️ Tokenizing on Doma Testnet... Please confirm in your wallet</div>
+              <div className="text-nc-text-muted text-center py-3">
+                Tokenizing on Doma Testnet... Please confirm in {connectedWallet}
+              </div>
             )}
 
             {step === 'error' && (
               <div>
-                <div className="text-red-400 text-sm mb-3">❌ {error}</div>
+                <div className="text-red-600 text-sm mb-3">{error}</div>
+                <WalletPicker onSelect={handleTokenize} />
                 <button
-                  onClick={handleTokenize}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-bold transition"
+                  onClick={handleRetry}
+                  className="w-full mt-3 text-nc-text-muted text-sm hover:text-nc-text transition-colors"
                 >
-                  Try Again →
+                  Choose a different wallet
                 </button>
               </div>
             )}
 
             {step === 'done' && txHash && (
-              <div className="bg-purple-900 border border-purple-500 rounded-lg p-4">
-                <p className="text-purple-300 font-bold text-sm mb-2">✅ Successfully tokenized on Doma testnet!</p>
+              <div className="bg-nc-bg-subtle border border-nc-border rounded-lg p-4">
+                <p className="text-nc-text font-semibold text-sm mb-2">Successfully tokenized on Doma testnet!</p>
+                {connectedWallet && (
+                  <p className="text-nc-text-muted text-xs mb-1">Wallet: {connectedWallet}</p>
+                )}
                 {walletAddress && (
-                  <p className="text-purple-400 text-xs mb-2">
-                    Wallet: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                  <p className="text-nc-text-muted text-xs mb-2">
+                    Address: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
                   </p>
                 )}
                 <a
                   href={`${DOMA_TESTNET.blockExplorerUrls[0]}/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-cyan-400 text-xs hover:underline break-all"
+                  className="text-nc-orange text-xs hover:underline break-all"
                 >
                   View transaction → {txHash.slice(0, 10)}...{txHash.slice(-8)}
                 </a>
@@ -171,7 +175,7 @@ export default function Confirmation() {
 
         <a
           href="/"
-          className="block text-center text-orange-400 hover:text-orange-300 font-bold mt-6"
+          className="block text-center text-nc-orange hover:underline font-semibold mt-6"
         >
           ← Search another domain
         </a>

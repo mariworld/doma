@@ -2,58 +2,127 @@ export type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>
   isMetaMask?: boolean
   isPhantom?: boolean
+  isCoinbaseWallet?: boolean
+  isRabby?: boolean
+  isBraveWallet?: boolean
   providers?: EthereumProvider[]
+}
+
+export type WalletInfo = {
+  id: string
+  name: string
+  icon?: string
+  provider: EthereumProvider
 }
 
 declare global {
   interface Window {
     ethereum?: EthereumProvider
-    phantom?: {
-      ethereum?: EthereumProvider
-    }
   }
 }
 
-function collectProviders(): EthereumProvider[] {
-  const providers: EthereumProvider[] = []
-  const seen = new Set<EthereumProvider>()
+function isPhantomWallet(
+  provider: EthereumProvider,
+  name?: string,
+  rdns?: string,
+): boolean {
+  return !!(
+    provider.isPhantom ||
+    rdns?.includes('phantom') ||
+    name?.toLowerCase().includes('phantom')
+  )
+}
 
-  const add = (provider?: EthereumProvider | null) => {
-    if (provider && !seen.has(provider)) {
-      seen.add(provider)
-      providers.push(provider)
+type Eip6963ProviderDetail = {
+  info: { uuid: string; name: string; icon: string; rdns: string }
+  provider: EthereumProvider
+}
+
+/** Discover installed EVM wallets via EIP-6963, with legacy fallbacks. */
+export function discoverWallets(timeoutMs = 300): Promise<WalletInfo[]> {
+  return new Promise((resolve) => {
+    const wallets: WalletInfo[] = []
+    const seenProviders = new Set<EthereumProvider>()
+    const seenKeys = new Set<string>()
+
+    const add = (wallet: WalletInfo, key?: string) => {
+      if (isPhantomWallet(wallet.provider, wallet.name, key)) return
+      if (seenProviders.has(wallet.provider)) return
+
+      const walletKey = normalizeWalletKey(key ?? inferWalletKey(wallet.provider, wallet.name))
+      if (seenKeys.has(walletKey)) return
+
+      seenProviders.add(wallet.provider)
+      seenKeys.add(walletKey)
+      wallets.push(wallet)
     }
-  }
 
+    const onAnnounce = (event: Event) => {
+      const { info, provider } = (event as CustomEvent<Eip6963ProviderDetail>).detail
+      if (isPhantomWallet(provider, info.name, info.rdns)) return
+      add({ id: info.uuid, name: info.name, icon: info.icon, provider }, info.rdns)
+    }
+
+    window.addEventListener('eip6963:announceProvider', onAnnounce)
+    window.dispatchEvent(new Event('eip6963:requestProvider'))
+
+    setTimeout(() => {
+      window.removeEventListener('eip6963:announceProvider', onAnnounce)
+      addLegacyWallets(add)
+      resolve(wallets)
+    }, timeoutMs)
+  })
+}
+
+function normalizeWalletKey(key: string): string {
+  const lower = key.toLowerCase()
+  if (lower.includes('metamask')) return 'metamask'
+  if (lower.includes('coinbase')) return 'coinbase'
+  if (lower.includes('rabby')) return 'rabby'
+  if (lower.includes('brave')) return 'brave'
+  return lower
+}
+
+function inferWalletKey(provider: EthereumProvider, name?: string): string {
+  if (provider.isCoinbaseWallet) return 'coinbase'
+  if (provider.isRabby) return 'rabby'
+  if (provider.isBraveWallet) return 'brave'
+  if (provider.isMetaMask) return 'metamask'
+  if (name) return name.toLowerCase().replace(/\s+/g, '-')
+  return 'browser-wallet'
+}
+
+function addLegacyWallets(add: (wallet: WalletInfo) => void) {
   const { ethereum } = window
+  if (!ethereum) return
 
-  if (ethereum?.providers?.length) {
+  if (ethereum.providers?.length) {
     for (const provider of ethereum.providers) {
-      add(provider)
+      if (isPhantomWallet(provider)) continue
+      add(providerToWallet(provider))
     }
+    return
   }
 
-  // Phantom's direct EVM provider bypasses the multi-wallet picker that throws "Unexpected error"
-  add(window.phantom?.ethereum)
-  add(ethereum)
+  if (isPhantomWallet(ethereum)) return
 
-  return providers
+  add(providerToWallet(ethereum))
 }
 
-/** Prefer MetaMask; fall back to Phantom or any other injected EVM wallet. */
-export function getEthereumProvider(): EthereumProvider | null {
-  const providers = collectProviders()
-  if (!providers.length) return null
-
-  const metaMask = providers.find((p) => p.isMetaMask && !p.isPhantom)
-  if (metaMask) return metaMask
-
-  if (window.phantom?.ethereum) return window.phantom.ethereum
-
-  const nonAggregator = providers.find((p) => !p.providers?.length)
-  if (nonAggregator) return nonAggregator
-
-  return providers[0]
+function providerToWallet(provider: EthereumProvider): WalletInfo {
+  if (provider.isCoinbaseWallet) {
+    return { id: 'coinbase-injected', name: 'Coinbase Wallet', provider }
+  }
+  if (provider.isRabby) {
+    return { id: 'rabby-injected', name: 'Rabby', provider }
+  }
+  if (provider.isBraveWallet) {
+    return { id: 'brave-injected', name: 'Brave Wallet', provider }
+  }
+  if (provider.isMetaMask) {
+    return { id: 'metamask-injected', name: 'MetaMask', provider }
+  }
+  return { id: 'injected-unknown', name: 'Browser Wallet', provider }
 }
 
 export function getWalletErrorMessage(err: unknown): string {
