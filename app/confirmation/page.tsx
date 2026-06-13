@@ -76,9 +76,9 @@ export default function Confirmation() {
       {showModal && (
         <TokenizeModal
           domain={domain.domain}
-          onClose={(success) => {
+          onClose={() => {
             setShowModal(false)
-            if (success) setTokenized(true)
+            setTokenized(true)
           }}
         />
       )}
