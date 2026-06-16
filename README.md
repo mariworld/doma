@@ -27,9 +27,9 @@ The happy path: search a domain → mock checkout → connect MetaMask
 - Transaction viewable on https://explorer-testnet.doma.xyz/tx/0x4c2ea9a239dad57a18f5c61277f9a8c8947ddd4230a90a347b3bfc1cfa9a24a7
 
 **Mocked:**
-- Domain search (D3 developer dashboard was non-functional at build time — one function swap connects to the real D3 search API)
+- Domain search (D3 developer dashboard was non-functional at build time - one function swap connects to the real D3 search API)
 - Payment processing (no real payment integration — Namecheap has their own payment infrastructure anyway)
-- Namecheap backend (not publicly documented — stubbed with a realistic UI that mirrors their actual design patterns)
+- Namecheap checkout UI (not publicly documented - built a realistic frontend that mirrors their design patterns. In production this would plug into Namecheap's existing checkout and domain management infrastructure)
 
 ---
 
