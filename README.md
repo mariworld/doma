@@ -1,37 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Namecheap ↔ Doma Integration Prototype
 
-## Getting Started
+**Mari Edwards — D3 Associate Solutions Engineer Assessment**
 
-First, run the development server:
+**Demo:** https://www.loom.com/share/68e7c548535a4e89b128e7d3bc9f54c2
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+**Live Site:** https://doma-five.vercel.app
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What this is
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+A working prototype showing how Namecheap could integrate with 
+the Doma Protocol to offer domain tokenization at checkout.
 
-## Learn More
+The happy path: search a domain → mock checkout → connect MetaMask 
+→ tokenize on Doma testnet → view confirmed transaction on-chain.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## What's real vs mocked
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Real:**
+- Doma testnet connection
+- MetaMask wallet connection and automatic network switching
+- On-chain transaction confirmed on Doma testnet
+- Transaction viewable on https://explorer-testnet.doma.xyz/tx/0x4c2ea9a239dad57a18f5c61277f9a8c8947ddd4230a90a347b3bfc1cfa9a24a7
 
-## Deploy on Vercel
+**Mocked:**
+- Domain search (D3 developer dashboard was non-functional at build time - one function swap connects to the real D3 search API)
+- Payment processing (no real payment integration — Namecheap has their own payment infrastructure anyway)
+- Namecheap checkout UI (not publicly documented - built a realistic frontend that mirrors their design patterns. In production this would plug into Namecheap's existing checkout and domain management infrastructure)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# doma-v2
+## The most important tradeoffs
+
+**1. Custom checkout over a drop-in widget**
+Namecheap's brand is their most valuable asset. A D3 widget would pull users out of the Namecheap experience. I built a native checkout flow so Namecheap keeps full control and so that Namecheap maintains trust with their users.
+
+**2. Proof-of-concept transaction over fake success**
+I went deep on the real integration path — registrar docs, voucher signing flow, the Proxy Doma Record smart contract deployed on testnet. The actual tokenization requires registrar-level credentials that Namecheap, as an ICANN-accredited registrar, would already have. Rather than mock a success screen, I submit a real zero-value transaction to the Doma testnet with the domain encoded in the data field. The result is a meaningful demo — real gas fees, real block confirmation, real tx hash, all verifiable on the Doma explorer.
+
+---
+
+## What I'd build next with another day
+
+- Hook up the real D3 search API once access is provisioned
+- Complete Doma registrar enrollment to unlock the voucher signing flow and call requestTokenization() on the Proxy Doma Record contract directly
+- Add WalletConnect support so users without MetaMask can tokenize from a mobile wallet
+- Polish the modal UX so MetaMask never pulls users out of the Namecheap experience
+
+---
+
+## Stack
+
+Next.js 15 · TypeScript · Tailwind CSS · ethers.js · Vercel
